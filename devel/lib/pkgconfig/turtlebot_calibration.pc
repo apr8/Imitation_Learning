@@ -1,0 +1,8 @@
+prefix=/home/baby/ros_workspace_str/devel
+
+Name: turtlebot_calibration
+Description: Description of turtlebot_calibration
+Version: 2.3.7
+Cflags: -I/home/baby/ros_workspace_str/devel/include
+Libs: -L/home/baby/ros_workspace_str/devel/lib 
+Requires: std_msgs message_runtime

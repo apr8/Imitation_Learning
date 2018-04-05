@@ -1,0 +1,8 @@
+prefix=/home/baby/ros_workspace_str/devel
+
+Name: turtlebot_stage
+Description: Description of turtlebot_stage
+Version: 2.2.3
+Cflags: 
+Libs: -L/home/baby/ros_workspace_str/devel/lib 
+Requires: 

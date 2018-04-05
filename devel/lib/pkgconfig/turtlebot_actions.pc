@@ -1,0 +1,8 @@
+prefix=/home/baby/ros_workspace_str/devel
+
+Name: turtlebot_actions
+Description: Description of turtlebot_actions
+Version: 2.3.7
+Cflags: -I/home/baby/ros_workspace_str/devel/include -I/home/baby/ros_workspace_str/src/turtlebot_apps/turtlebot_actions/include
+Libs: -L/home/baby/ros_workspace_str/devel/lib 
+Requires: roscpp actionlib actionlib_msgs geometry_msgs message_runtime tf cv_bridge image_transport image_geometry turtlebot_bringup

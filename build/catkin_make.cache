@@ -1,0 +1,2 @@
+imitation_learning:turtlebot_apps/turtlebot_actions:turtlebot_apps/turtlebot_apps:turtlebot_apps/turtlebot_calibration:turtlebot_apps/turtlebot_follower:turtlebot_apps/turtlebot_navigation:turtlebot_apps/turtlebot_rapps:turtlebot_simulator/turtlebot_gazebo:turtlebot_simulator/turtlebot_simulator:turtlebot_simulator/turtlebot_stage:turtlebot_simulator/turtlebot_stdr
+-DCATKIN_DEVEL_PREFIX=/home/baby/ros_workspace_str/devel -DCMAKE_INSTALL_PREFIX=/home/baby/ros_workspace_str/install -G Unix Makefiles

@@ -1,0 +1,8 @@
+prefix=/home/baby/ros_workspace_str/install
+
+Name: turtlebot_gazebo
+Description: Description of turtlebot_gazebo
+Version: 2.2.3
+Cflags: 
+Libs: -L/home/baby/ros_workspace_str/install/lib 
+Requires: 
