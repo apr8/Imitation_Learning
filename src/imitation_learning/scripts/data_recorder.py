@@ -12,6 +12,9 @@ import cv2
 print cv2.__version__
 import time
 from threading import Lock
+import os
+import roslib
+import rospy
 
 
 """
@@ -30,42 +33,72 @@ Location of folders where images are saved are /home/ubuntu/DepthIMG/ /home/ubun
 class dataRecorder(object):
 
     def __init__(self):
-        print "dataRecorder"
-        self.record = True
-        self.twist = None
-        self.twistLock = Lock()
-        self.bridge = CvBridge()
-        self.globaltime = None
+        print "Initializing Data Recorder"
 
-        # subscribe to camaera raw image
+	# create class variables
+	self.createClassVariables()
+
+	# create a directory to store the training data
+	self.createDirectory()
+
+        # create subscribers and publishers
+	self.createSubAndPub()
+
+	# list of lables
+	self.lables = ['S','L','R','B'] 
+        # create and keep ros node running
+        rospy.init_node('dataRecorder',anonymous=True)
+	print("Recording data")
+	rospy.spin()
+
+    def createSubAndPub(self):
+	# subscribe to camaera raw image
         rospy.Subscriber("/camera/rgb/image_raw", Image, self.streamCB)
 
         #subscribe to cmd velocity for teleop
         rospy.Subscriber("/cmd_vel_mux/input/teleop", Twist, self.cmd_velCB)
 
-        rospy.init_node('dataRecorder',anonymous=True)
-        rospy.spin()
+    def createDirectory(self, directory='../TrainingIMG'):
+	# create the folder to save the training data if not available
+	if not os.path.exists(directory):
+    	    os.makedirs(directory)
 
-    """
-    Receives an Image message and encodes the sequence,timestamp,throttle and steering values into the filename and saves it as a jpg
-    """
+    def createClassVariables(self):
+        self.record = True
+        self.twist = None
+        self.twistLock = Lock()
+        self.bridge = CvBridge()
+        self.globaltime = None
+    
     def streamCB(self, pic):
+        """
+        Receives an Image message and encodes the sequence,timestamp,throttle and steering values into the filename and saves it as a jpg
+        """
         if self.record == True:
             #rospy.loginfo("image recieved")
             try:
                 cv2image = self.bridge.imgmsg_to_cv2(pic)
-                if self.twist is not None:
+                if self.twist is not None and (self.twist.linear.x != 0.0 or self.twist.angular.z != 0.0):
                     fname = None
                     seq = str(pic.header.seq)
                     timestamp = str(pic.header.stamp)
-                    with self.twistLock:
-                        fname = seq + '_' + timestamp + '_' + str(round(self.twist.linear.x,8)) + '_' + str(round(self.twist.angular.z,8))
-                    cv2.imwrite("../TrainingIMG/"+fname+".jpg",cv2image)
+		    with self.twistLock:
+			if self.twist.angular.z > 0.0:
+			    lable = 'L'
+			elif self.twist.angular.z < 0.0:
+			    lable = 'R'
+			elif self.twist.angular.z == 0:
+			    if self.twist.linear.x > 0.0:
+				lable = 'S'
+			    else:
+				lable = 'B'
+			print lable, type(lable)	
+                        fname = seq + '_' + timestamp + '_' + str(round(self.twist.linear.x,8)) + '_' + str(round(self.twist.angular.z,8)) + '_' + lable
+                    cv2.imwrite("../TrainingIMG/"+fname+".png",cv2image)
             except CvBridgeError as e:
                 print(e)
         else:
             rospy.loginfo("Not Recording from kinect")
-
     """
     Receives a twist msg
     """
