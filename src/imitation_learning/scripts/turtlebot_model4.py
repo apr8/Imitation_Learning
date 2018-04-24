@@ -22,11 +22,12 @@ class TurtleBotModel():
         # load test and train data
         if self.action == '1':
             self.train_data = np.load('train_scan_features_dagger.npy')
-            self.train_labels = np.load('train_scan_labels_dagger.npy')
-            self.train_labels = np.reshape(self.train_labels, (-1,2))
+            self.train_labels = np.load('train_scan_labels_dagger_class.npy')
             print(self.train_data, self.train_labels)
         elif self.action == '2' or self.action == '3':
-            self.eval_data = np.load('test_data.npy')
+            # TODO Add test data
+            pass
+            #self.eval_data = np.load('test_data.npy')
             #self.eval_labels = self.readPath('../TestIMG')
 
 
@@ -151,18 +152,20 @@ class TurtleBotModel():
       # Output layer
       # Input Tensor Shape: [batch_size, 256]
       # Output Tensor Shape: [batch_size, 2]
-      logits = tf.layers.dense(inputs=dropout, units=2)
+      logits = tf.layers.dense(inputs=dropout, units=3)
 
-      pred = tf.reshape(logits,[-1,2])
       predictions = {
           # Generate predictions (for PREDICT and EVAL mode)
-          "vel": pred
+          "classes": tf.argmax(input=logits, axis=1),
+          # Add `softmax_tensor` to the graph. It is used for PREDICT and by the
+          # `logging_hook`.
+          "probabilities": tf.nn.softmax(logits, name="softmax_tensor")
       }
       if mode == tf.estimator.ModeKeys.PREDICT:
         return tf.estimator.EstimatorSpec(mode=mode, predictions=predictions)
 
       # Calculate Loss (for both TRAIN and EVAL modes)
-      loss = tf.losses.mean_squared_error(labels, pred)
+      loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=logits)
 
       # Configure the Training Op (for TRAIN mode)
       if mode == tf.estimator.ModeKeys.TRAIN:
@@ -195,6 +198,9 @@ class TurtleBotModel():
       #tensors_to_log = {"vel"}
       #logging_hook = tf.train.LoggingTensorHook(
       #    tensors=tensors_to_log, every_n_iter=50)
+      tensors_to_log = {"probabilities": "softmax_tensor"}
+      logging_hook = tf.train.LoggingTensorHook(
+          tensors=tensors_to_log, every_n_iter=50)
 
       #print(self.train_data, self.train_data.shape, self.train_labels, self.train_labels.shape)
       # Train the model
@@ -202,7 +208,7 @@ class TurtleBotModel():
           train_input_fn = tf.estimator.inputs.numpy_input_fn(
               x={"x": self.train_data},
               y=self.train_labels,
-              batch_size=1,
+              batch_size=100,
               num_epochs=None,
               shuffle=True)
           self.classifier.train(

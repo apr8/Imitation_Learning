@@ -72,12 +72,12 @@ class dataRecorder(object):
             rospy.Subscriber("/camera/rgb/image_raw", Image, self.streamCB)
 
         #subscribe to cmd velocity for teleop
-        #rospy.Subscriber("/cmd_vel_mux/input/teleop", Twist, self.cmd_velCB)
+        rospy.Subscriber("/cmd_vel_mux/input/teleop", Twist, self.cmd_velCB)
         rospy.Subscriber("/cmd_vel_mux/input/navi", Twist, self.cmd_velCB)
 
         # move base subscribes
-        rospy.Subscriber("/move_base/goal", move_base_msgs/MoveBaseActionGoal, self.moveBaseGoal)
-        rospy.Subscriber("/move_base/result", move_base_msgs/MoveBaseActionResult, self.moveBaseResult)
+        rospy.Subscriber("/move_base/goal", MoveBaseActionGoal, self.moveBaseGoal)
+        rospy.Subscriber("/move_base/result", MoveBaseActionResult, self.moveBaseResult)
         self.listener = tf.TransformListener()
 
     def createDirectory(self, directory='../TestIMG'):
@@ -98,6 +98,7 @@ class dataRecorder(object):
         self.globaltime = None
         self.reg_vel = []
         self.scan_feature = []
+        self.scan_label_class = []
 
     def stream_scanCB(self, scan):
         """
@@ -115,11 +116,21 @@ class dataRecorder(object):
             #rospy.loginfo("image recieved")
             try:
                 if self.twist is not None and (self.twist.linear.x != 0.0 or self.twist.angular.z != 0.0):
-                    twist = np.zeros((2,1))
+                    twist = np.zeros((2))
 		    with self.twistLock:
-                        twist[0,0] = self.twist.linear.x
-                        twist[1,0] = self.twist.angular.z
-
+                        twist[0] = self.twist.linear.x
+                        twist[1] = self.twist.angular.z
+			if self.twist.angular.z > 0.0:
+			    lable = 1
+			elif self.twist.angular.z < 0.0:
+			    lable = 2
+			elif self.twist.angular.z == 0:
+			    if self.twist.linear.x > 0.0:
+				lable = 0
+			    else:
+				lable = 3
+			print lable, type(lable)
+                    self.scan_label_class.append(lable)
                     self.reg_vel.append(twist)
                     self.scan_feature.append(scan_np)
                     print 'DataNumber:', len(self.scan_feature)
@@ -133,9 +144,12 @@ class dataRecorder(object):
         if self.action == '1':
             labels = np.asarray(self.reg_vel)
             features = np.asarray(self.scan_feature)
+            label_class = np.asarray(self.scan_label_class)
             print labels.shape, features.shape
-            np.save('train_scan_features_new.npy', features)
-            np.save('train_scan_labels_new.npy', labels)
+            np.save('train_scan_features_dagger.npy', features)
+            np.save('train_scan_labels_dagger.npy', labels)
+            np.save('train_scan_labels_dagger_class.npy', label_class)
+
     def streamCB(self, pic):
         """
         Receives an Image message and encodes the sequence,timestamp,throttle and steering values into the filename and saves it as a jpg
