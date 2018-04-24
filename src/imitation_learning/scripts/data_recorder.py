@@ -5,10 +5,12 @@ import numpy as np
 import rospy
 from geometry_msgs.msg import Twist, TwistStamped
 from std_msgs.msg import String
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, LaserScan
 from cv_bridge import CvBridge, CvBridgeError
 import sys
 import cv2
+import tf
+from move_base_msgs.msg import MoveBaseActionResult, MoveBaseActionGoal
 print cv2.__version__
 import time
 from threading import Lock
@@ -32,36 +34,61 @@ Location of folders where images are saved are /home/ubuntu/DepthIMG/ /home/ubun
 
 class dataRecorder(object):
 
-    def __init__(self):
+    def __init__(self, action):
         print "Initializing Data Recorder"
 
-	# create class variables
-	self.createClassVariables()
+        # create a set of actions
+        self.action = action
 
-	# create a directory to store the training data
-	self.createDirectory()
+        # create class variables
+        self.createClassVariables()
+
+        # create a directory to store the training data
+        self.createDirectory()
 
         # create subscribers and publishers
-	self.createSubAndPub()
+        self.createSubAndPub()
 
-	# list of lables
-	self.lables = ['S','L','R','B'] 
+        # list of lables
+        self.lables = ['S','L','R','B']
+
         # create and keep ros node running
         rospy.init_node('dataRecorder',anonymous=True)
-	print("Recording data")
-	rospy.spin()
+
+        # invoke shut down call back
+        rospy.on_shutdown(self.shutdownCB)
+
+        print("Recording data")
+        rospy.spin()
 
     def createSubAndPub(self):
-	# subscribe to camaera raw image
-        rospy.Subscriber("/camera/rgb/image_raw", Image, self.streamCB)
+
+        if self.action == '1':
+	        # subscribe to raw scan data
+            rospy.Subscriber("/scan", LaserScan, self.stream_scanCB)
+
+        elif self.action == '2':
+            # subscribe to camaera raw image
+            rospy.Subscriber("/camera/rgb/image_raw", Image, self.streamCB)
 
         #subscribe to cmd velocity for teleop
-        rospy.Subscriber("/cmd_vel_mux/input/teleop", Twist, self.cmd_velCB)
+        #rospy.Subscriber("/cmd_vel_mux/input/teleop", Twist, self.cmd_velCB)
+        rospy.Subscriber("/cmd_vel_mux/input/navi", Twist, self.cmd_velCB)
 
-    def createDirectory(self, directory='../TrainingIMG'):
+        # move base subscribes
+        rospy.Subscriber("/move_base/goal", move_base_msgs/MoveBaseActionGoal, self.moveBaseGoal)
+        rospy.Subscriber("/move_base/result", move_base_msgs/MoveBaseActionResult, self.moveBaseResult)
+        self.listener = tf.TransformListener()
+
+    def createDirectory(self, directory='../TestIMG'):
 	# create the folder to save the training data if not available
 	if not os.path.exists(directory):
     	    os.makedirs(directory)
+
+    def moveBaseGoal(self, data):
+        pass
+    def moveBaseResult(self, data):
+        pass
 
     def createClassVariables(self):
         self.record = True
@@ -69,7 +96,46 @@ class dataRecorder(object):
         self.twistLock = Lock()
         self.bridge = CvBridge()
         self.globaltime = None
-    
+        self.reg_vel = []
+        self.scan_feature = []
+
+    def stream_scanCB(self, scan):
+        """
+        Receives an scan message and encodes the scan msg and corresponing labels
+        """
+        scan_np = np.asarray(scan.ranges, np.float32)
+        scan_np = np.reshape(scan_np, (-1,1))
+        idx = np.where(np.isnan(scan_np))
+        #print scan_np, scan_np.shape
+        #print idx
+        scan_np[idx] = scan.range_max
+        scan_np -= np.mean(scan_np)
+        #print scan_np, scan_np.shape
+        if self.record == True:
+            #rospy.loginfo("image recieved")
+            try:
+                if self.twist is not None and (self.twist.linear.x != 0.0 or self.twist.angular.z != 0.0):
+                    twist = np.zeros((2,1))
+		    with self.twistLock:
+                        twist[0,0] = self.twist.linear.x
+                        twist[1,0] = self.twist.angular.z
+
+                    self.reg_vel.append(twist)
+                    self.scan_feature.append(scan_np)
+                    print 'DataNumber:', len(self.scan_feature)
+            except CvBridgeError as e:
+                print(e)
+        else:
+            rospy.loginfo("Not Recording from kinect")
+
+    def shutdownCB(self):
+        print "Now shutting down"
+        if self.action == '1':
+            labels = np.asarray(self.reg_vel)
+            features = np.asarray(self.scan_feature)
+            print labels.shape, features.shape
+            np.save('train_scan_features_new.npy', features)
+            np.save('train_scan_labels_new.npy', labels)
     def streamCB(self, pic):
         """
         Receives an Image message and encodes the sequence,timestamp,throttle and steering values into the filename and saves it as a jpg
@@ -92,9 +158,9 @@ class dataRecorder(object):
 				lable = 'S'
 			    else:
 				lable = 'B'
-			print lable, type(lable)	
+			print lable, type(lable)
                         fname = seq + '_' + timestamp + '_' + str(round(self.twist.linear.x,8)) + '_' + str(round(self.twist.angular.z,8)) + '_' + lable
-                    cv2.imwrite("../TrainingIMG/"+fname+".png",cv2image)
+                    cv2.imwrite("../TestIMG/"+fname+".png",cv2image)
             except CvBridgeError as e:
                 print(e)
         else:
@@ -110,7 +176,8 @@ class dataRecorder(object):
 
 
 if __name__ == '__main__':
+    i = raw_input("Enter the data to record 1:scan, 2:images : ")
     try:
-        dataRecorder()
+        dataRecorder(i)
     except rospy.ROSInterruptException:
         pass
