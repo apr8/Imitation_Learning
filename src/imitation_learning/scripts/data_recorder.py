@@ -2,8 +2,9 @@
 
 ##import cPickle as pickle
 import numpy as np
+import math
 import rospy
-from geometry_msgs.msg import Twist, TwistStamped
+from geometry_msgs.msg import Twist, TwistStamped, PoseStamped
 from std_msgs.msg import String
 from sensor_msgs.msg import Image, LaserScan
 from cv_bridge import CvBridge, CvBridgeError
@@ -46,14 +47,14 @@ class dataRecorder(object):
         # create a directory to store the training data
         self.createDirectory()
 
+        # create and keep ros node running
+        rospy.init_node('dataRecorder',anonymous=True)
+
         # create subscribers and publishers
         self.createSubAndPub()
 
         # list of lables
         self.lables = ['S','L','R','B']
-
-        # create and keep ros node running
-        rospy.init_node('dataRecorder',anonymous=True)
 
         # invoke shut down call back
         rospy.on_shutdown(self.shutdownCB)
@@ -78,20 +79,38 @@ class dataRecorder(object):
         # move base subscribes
         rospy.Subscriber("/move_base/goal", MoveBaseActionGoal, self.moveBaseGoal)
         rospy.Subscriber("/move_base/result", MoveBaseActionResult, self.moveBaseResult)
-        self.listener = tf.TransformListener()
+        # callback for timer
+        rospy.Timer(rospy.Duration(1), self.Timercallback)
+        self.tf_listener = tf.TransformListener()
 
+    def Timercallback(self, event):
+        print "In timer Callback", self.record, self.goalReached
+        if self.record == True and self.goalReached == True:
+            if self.count >= 2:
+                self.record = False
+                self.goalReached = False
+                self.count = 0
+            self.count +=1
+            print 'Setting timer count:', self.count
+        return
     def createDirectory(self, directory='../TestIMG'):
 	# create the folder to save the training data if not available
 	if not os.path.exists(directory):
     	    os.makedirs(directory)
-
+        return
     def moveBaseGoal(self, data):
-        pass
-    def moveBaseResult(self, data):
-        pass
-
-    def createClassVariables(self):
         self.record = True
+        self.goalReached = False
+        self.goal_pose = data.goal.target_pose.pose
+        return
+
+    def moveBaseResult(self, data):
+        print "GOAL REACHED"
+        self.goalReached = True
+        return
+    def createClassVariables(self):
+        self.record = False
+        self.goalReached = False
         self.twist = None
         self.twistLock = Lock()
         self.bridge = CvBridge()
@@ -99,6 +118,27 @@ class dataRecorder(object):
         self.reg_vel = []
         self.scan_feature = []
         self.scan_label_class = []
+        self.rel_goal = []
+        self.count = 0
+        return
+    def getRelTF(self):
+
+        # get the relative position of the robot with respect to the map
+        (trans,rot) = self.tf_listener.lookupTransform('/map', '/base_footprint', rospy.Time(0))
+        d = math.sqrt((self.goal_pose.position.x - trans[0]) ** 2 + (trans[1] - self.goal_pose.position.y) ** 2)
+        quaternion = (self.goal_pose.orientation.x,
+                      self.goal_pose.orientation.y,
+                      self.goal_pose.orientation.z,
+                      self.goal_pose.orientation.w)
+        r1 = tf.transformations.euler_from_quaternion(quaternion)
+        quaternion = (rot[0],
+                      rot[1],
+                      rot[2],
+                      rot[3])
+
+        r2 = tf.transformations.euler_from_quaternion(quaternion)
+        #print 'angle:',r1[2] - r2[2], 'd:',d
+        return d, r1[2] - r2[2]
 
     def stream_scanCB(self, scan):
         """
@@ -115,25 +155,35 @@ class dataRecorder(object):
         if self.record == True:
             #rospy.loginfo("image recieved")
             try:
+                twist = np.zeros((2))
+                rel_goal = np.zeros((2))
+                lable = 3
                 if self.twist is not None and (self.twist.linear.x != 0.0 or self.twist.angular.z != 0.0):
-                    twist = np.zeros((2))
 		    with self.twistLock:
                         twist[0] = self.twist.linear.x
                         twist[1] = self.twist.angular.z
-			if self.twist.angular.z > 0.0:
+			if self.twist.angular.z > 0.175:
 			    lable = 1
-			elif self.twist.angular.z < 0.0:
+			elif self.twist.angular.z < -0.175:
 			    lable = 2
-			elif self.twist.angular.z == 0:
+                        else:
 			    if self.twist.linear.x > 0.0:
 				lable = 0
 			    else:
 				lable = 3
 			print lable, type(lable)
-                    self.scan_label_class.append(lable)
-                    self.reg_vel.append(twist)
-                    self.scan_feature.append(scan_np)
-                    print 'DataNumber:', len(self.scan_feature)
+                else:
+                    twist = np.zeros((2))
+                    print lable, type(lable)
+
+                scan_np = np.append(scan_np, rel_goal.reshape((2, 1)), axis = 0)
+                rel_goal[0],rel_goal[1] = self.getRelTF()
+                self.rel_goal.append(rel_goal)
+                self.scan_label_class.append(lable)
+                self.reg_vel.append(twist)
+                self.scan_feature.append(scan_np)
+                print 'DataNumber:', len(self.scan_feature), lable, rel_goal
+
             except CvBridgeError as e:
                 print(e)
         else:
@@ -145,8 +195,10 @@ class dataRecorder(object):
             labels = np.asarray(self.reg_vel)
             features = np.asarray(self.scan_feature)
             label_class = np.asarray(self.scan_label_class)
-            print labels.shape, features.shape
+            goal = np.asarray(self.rel_goal)
+            print labels.shape, features.shape, goal.shape
             np.save('train_scan_features_dagger.npy', features)
+            np.save('train_scan_goal_dagger.npy', goal)
             np.save('train_scan_labels_dagger.npy', labels)
             np.save('train_scan_labels_dagger_class.npy', label_class)
 
